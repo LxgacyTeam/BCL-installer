@@ -20,7 +20,7 @@
 **Custom startup flags:**
 ```
 /GAME="path\to\game" - specify path to game folder
-/SKIPEULA - skip 
+/SKIPEULA - skip 'Terms of use and legal provisions' page
 /RUNGAME - launch game after successful installation. Works only with /SILENT or /VERYSILENT
 /DISPOSABLE - automatic self-deletion of the installer after installation completes
 ```
