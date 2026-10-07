@@ -1,12 +1,12 @@
 <p align="center">
   <picture>
-    <img alt="bcl" src="https://github.com/LxgacyTeam/BCL-installer/blob/main/branding/bcl-logo-512.png" style="max-width:192px;width:100%">
+    <img alt="bcl" src="./branding/bcl-logo-512.png" style="max-width:192px;width:100%">
   </picture>
 </p>
 
 <h1 align="center">BigCityLegacy Installer</h1>
 
-<p>Standalone Windows installer/updater for BigCityLegacy mod, powered by Inno Setup 7.x</p>
+<p>Standalone Windows installer/updater for <a href="https://github.com/LxgacyTeam/BigCityLegacy">BigCityLegacy</a> mod, powered by Inno Setup 7.x</p>
 
 ---
 **Features:**
