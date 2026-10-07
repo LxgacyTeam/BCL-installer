@@ -6,7 +6,7 @@
 
 <h1 align="center">BigCityLegacy Installer</h1>
 
-<p>Standalone Windows installer/updater for <a href="https://github.com/LxgacyTeam/BigCityLegacy">BigCityLegacy</a> mod, powered by Inno Setup 7.x</p>
+<p>Standalone online installer/updater for <a href="https://github.com/LxgacyTeam/BigCityLegacy">BigCityLegacy</a> mod, powered by Inno Setup 7.x</p>
 
 ---
 **Features:**
