@@ -12,13 +12,18 @@
 
 #define SupportedGameSHA256 "8C71E536AB169656AEAE13CCC0D1DD989516CD4648B1D14DB9B99D55430F15C0"
 
+#ifndef BCL_OFFLINE
 #define GitHubApiUrl "https://api.github.com/repos/LxgacyTeam/BigCityLegacy/releases/latest"
+#define CodebergApiUrl "https://codeberg.org/api/v1/repos/LxgacyTeam/BigCityLegacy/releases/latest"
+#define CodebergBepInExUrl "https://codeberg.org/LxgacyTeam/bepinex5-releases-mirror/raw/branch/main/BepInEx_win_x64_5.4.23.5.zip"
 #define GitHubWebUrl "https://github.com/LxgacyTeam/BigCityLegacy"
 #define WikiUrl "https://github.com/LxgacyTeam/BigCityLegacy/wiki"
 
 #define TermsRtfUrlEn "https://github.com/LxgacyTeam/BigCityLegacy/raw/refs/heads/main/docs/NOTICE.rtf"
 #define TermsRtfUrlRu "https://github.com/LxgacyTeam/BigCityLegacy/raw/refs/heads/main/docs/NOTICE_RU.rtf"
 #define BepInExUrl "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip"
+
+#endif
 
 #define BIECore "BepInEx\core\BepInEx.dll"
 #define BIEConfig "BepInEx\config\BepInEx.cfg"
@@ -41,10 +46,14 @@
 AppId={{6B7A8D10-7E6B-4A4D-9E2C-BIGCITYLEGACY}}
 AppName={#MyAppName}
 AppVerName={#MyAppName}
-AppVersion=1.0
+AppVersion=1.0.0
 AppPublisher=LegacyTeam
 
-OutputBaseFilename=BigCityLegacyInstaller
+#ifdef BCL_OFFLINE
+OutputBaseFilename=BigCityLegacy_Installer_Offline
+#else
+OutputBaseFilename=BigCityLegacy_Installer
+#endif
 Compression=zip
 SolidCompression=yes
 
@@ -86,6 +95,31 @@ Source: "tools\FolderPicker.ps1"; \
     DestDir: "{tmp}"; \
     Flags: dontcopy noencryption
 
+#ifndef BCL_OFFLINE
+Source: "tools\SelectReleaseAsset.ps1"; Flags: dontcopy noencryption
+Source: "tools\ReadPluginsList.ps1"; Flags: dontcopy noencryption
+#endif
+Source: "tools\InstallPlugin.ps1"; Flags: dontcopy noencryption
+#ifdef BCL_OFFLINE
+Source: "payload\BepInEx.zip"; Flags: dontcopy noencryption
+Source: "payload\BigCityLegacy.zip"; DestName: "BigCityLegacy-latest.zip"; Flags: dontcopy noencryption
+Source: "payload\NOTICE.rtf"; Flags: dontcopy noencryption
+Source: "payload\NOTICE_RU.rtf"; Flags: dontcopy noencryption
+Source: "payload\NOTICE_ZH.rtf"; Flags: dontcopy noencryption
+#define OfflineIndex 0
+#define OfflineHandle
+#define OfflineFound
+#sub EmbedOfflinePlugin
+  #define OfflineName FindGetFileName(OfflineHandle)
+  #emit 'Source: "offline_plugins\' + OfflineName + '"; DestName: "BCL-plugin-' + Str(OfflineIndex) + '.zip"; Flags: dontcopy noencryption'
+  #expr OfflineIndex++
+#endsub
+#for {OfflineHandle = OfflineFound = FindFirst(SourcePath + "offline_plugins\*.zip", 0); OfflineFound; OfflineFound = FindNext(OfflineHandle)} EmbedOfflinePlugin
+#if OfflineHandle
+  #call FindClose(OfflineHandle)
+#endif
+#endif
+
 [Languages]
 
 Name: "en"; \
@@ -93,6 +127,8 @@ Name: "en"; \
 
 Name: "ru"; \
     MessagesFile: "compiler:Languages\Russian.isl"
+
+Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [CustomMessages]
 
@@ -113,13 +149,17 @@ en.BepInExLaunch=Starting the game to initialize BepInEx...
 en.BepInExValidation=Verifying BepInEx installation...
 
 en.ModDownload=Downloading the latest BigCityLegacy version...
+en.ModOffline=Preparing embedded BigCityLegacy files...
+en.BepInExOffline=Preparing embedded BepInEx files...
+en.LegalOffline=Loading included legal provisions...
 en.ModInstall=Installing the latest BigCityLegacy version...
 en.ModValidation=Verifying BigCityLegacy installation...
 
 en.ModBackup=Backing up the existing BigCityLegacy version...
 en.ModRollback=Restoring the previous BigCityLegacy version...
 
-en.GitHubError=Could not obtain the latest BigCityLegacy release from GitHub.
+en.GitHubError=Could not obtain the BigCityLegacy release from the selected source.
+en.DataSource=Data source for installation and updates:
 en.BepInExError=Could not download or install BepInEx.
 en.BepInExInitError=BepInEx did not initialize successfully within the expected time.
 en.ModError=Could not install the latest version of the mod.
@@ -138,7 +178,7 @@ en.LegalDescription=Please review the current terms before continuing.
 en.LegalAccept=I have read and accept the terms of use and legal provisions.
 en.LegalAcceptRequired=You must accept the terms of use and legal provisions to continue.
 en.LegalDownload=Downloading the current legal provisions...
-en.LegalDownloadError=The terms of use and legal provisions could not be downloaded from GitHub. Check your Internet connection and the language-specific TermsRtfUrl setting.
+en.LegalDownloadError=The terms of use and legal provisions could not be loaded. Check the selected source or offline payload.
 en.GitHubLink=GitHub
 en.WikiLink=Wiki
 en.RunGame=Launch the game
@@ -161,13 +201,17 @@ ru.BepInExLaunch=Запуск игры для инициализации BepInEx
 ru.BepInExValidation=Проверка установки BepInEx...
 
 ru.ModDownload=Загрузка последней версии BigCityLegacy...
+ru.ModOffline=Подготовка встроенных файлов BigCityLegacy...
+ru.BepInExOffline=Подготовка встроенных файлов BepInEx...
+ru.LegalOffline=Чтение включённых правовых положений...
 ru.ModInstall=Установка BigCityLegacy...
 ru.ModValidation=Проверка установки BigCityLegacy...
 
 ru.ModBackup=Создание резервной копии текущей версии BigCityLegacy...
 ru.ModRollback=Восстановление предыдущей версии BigCityLegacy...
 
-ru.GitHubError=Не удалось получить последнюю версию BigCityLegacy с GitHub.
+ru.GitHubError=Не удалось получить версию BigCityLegacy из выбранного источника.
+ru.DataSource=Источник данных для установки и обновлений:
 ru.BepInExError=Не удалось скачать или установить BepInEx.
 ru.BepInExInitError=BepInEx не удалось успешно инициализировать за отведённое время.
 ru.ModError=Не удалось установить последнюю версию BigCityLegacy.
@@ -186,7 +230,7 @@ ru.LegalDescription=Ознакомьтесь с актуальными усло�
 ru.LegalAccept=Я прочитал(а) и принимаю условия использования и правовые положения.
 ru.LegalAcceptRequired=Для продолжения необходимо принять условия использования и правовые положения.
 ru.LegalDownload=Загрузка актуальных правовых положений...
-ru.LegalDownloadError=Не удалось загрузить условия использования и правовые положения с GitHub. Проверьте подключение к Интернету и URL RTF для выбранного языка.
+ru.LegalDownloadError=Не удалось загрузить условия использования и правовые положения из выбранного источника. Проверьте подключение или офлайн-пакет.
 ru.GitHubLink=GitHub
 ru.WikiLink=Wiki
 ru.RunGame=Запустить игру
@@ -194,20 +238,87 @@ ru.VisitWiki=Посетить Wiki
 
 
 
+zh.GameDirectory=游戏目录：
+zh.SelectGameDirectory=选择游戏根目录。
+zh.GameDirectoryDescription=所选目录必须包含 %1。
+zh.GameNotFound=所选目录中未找到游戏。%n%n需要的文件：%n%1
+zh.GameRunningTitle=游戏正在运行
+zh.GameRunning=游戏正在运行。%n%n安装或更新模组之前必须关闭游戏。%n%n是否关闭 %1 的所有实例？
+zh.GameVersionWarningTitle=兼容模式
+zh.GameVersionWarning=所选游戏版本与支持的版本 %1 不同。%n%nBigCityLegacy 将以功能受限的兼容模式运行。%n%n是否继续？
+zh.BepInExDownload=正在下载 BepInEx...
+zh.BepInExInstall=正在安装 BepInEx...
+zh.BepInExLaunch=正在启动游戏以初始化 BepInEx...
+zh.BepInExValidation=正在验证 BepInEx 安装...
+zh.ModDownload=正在下载最新版本的 BigCityLegacy...
+zh.ModOffline=正在准备内置的 BigCityLegacy 文件...
+zh.BepInExOffline=正在准备内置的 BepInEx 文件...
+zh.LegalOffline=正在加载内置的法律条款...
+zh.ModInstall=正在安装 BigCityLegacy...
+zh.ModValidation=正在验证 BigCityLegacy 安装...
+zh.ModBackup=正在备份已安装的 BigCityLegacy...
+zh.ModRollback=正在恢复之前的 BigCityLegacy 版本...
+zh.GitHubError=无法从所选来源获取 BigCityLegacy 版本。
+zh.DataSource=安装和更新的数据来源：
+zh.BepInExError=无法下载或安装 BepInEx。
+zh.BepInExInitError=BepInEx 未能在规定时间内完成初始化。
+zh.ModError=无法安装模组。
+zh.InstallComplete=安装成功。
+zh.UpdateComplete=更新成功。
+zh.ConfigPreserved=已保留现有配置文件。
+zh.SelfDeleteFailed=无法安排自动删除安装程序。您可以手动删除它。
+zh.AbortInstallation=安装已取消。
+zh.LegalTitle=使用条款与法律声明
+zh.LegalDescription=继续之前请阅读使用条款。
+zh.LegalAccept=我已阅读并接受使用条款与法律声明。
+zh.LegalAcceptRequired=必须接受使用条款与法律声明才能继续。
+zh.LegalDownload=正在下载使用条款...
+zh.LegalDownloadError=无法加载使用条款与法律声明。请检查数据来源或离线安装包。
+zh.GitHubLink=GitHub
+zh.WikiLink=文档
+zh.RunGame=启动游戏
+zh.VisitWiki=查看文档
+en.PluginsTitle=Additional plugins
+ru.PluginsTitle=Дополнительные плагины
+zh.PluginsTitle=附加插件
+en.PluginsDescription=Select optional plugins to install with BigCityLegacy.
+ru.PluginsDescription=Выберите плагины для установки вместе с BigCityLegacy.
+zh.PluginsDescription=选择要与 BigCityLegacy 一起安装的可选插件。
+en.PluginsRepository=About the selected plugin
+ru.PluginsRepository=О выбранном плагине
+zh.PluginsRepository=关于所选插件
+en.PluginsUnavailable=The plugin list could not be loaded. You can continue without additional plugins.
+ru.PluginsUnavailable=Не удалось загрузить список плагинов. Можно продолжить без дополнительных плагинов.
+zh.PluginsUnavailable=无法加载插件列表。您可以继续安装而不添加插件。
+en.PluginsEmpty=No additional plugins are available.
+ru.PluginsEmpty=Дополнительные плагины отсутствуют.
+zh.PluginsEmpty=没有可用的附加插件。
+en.PluginPrepare=Preparing selected plugins...
+ru.PluginPrepare=Подготовка выбранных плагинов...
+zh.PluginPrepare=正在准备所选插件...
+en.PluginInstall=Installing selected plugins...
+ru.PluginInstall=Установка выбранных плагинов...
+zh.PluginInstall=正在安装所选插件...
+en.PluginError=Could not prepare or install a selected plugin. See the setup log for details.
+ru.PluginError=Не удалось подготовить или установить выбранный плагин. Подробности — в журнале установщика.
+zh.PluginError=无法准备或安装所选插件。详情请查看安装日志。
+
 [Run]
 
 Filename: "{code:GetGameExePath}"; \
+    Parameters: "{code:GetGameLaunchArgs}"; \
     WorkingDir: "{code:GetGameDirectory}"; \
     Description: "{cm:RunGame}"; \
     Flags: nowait postinstall skipifsilent; \
     Check: ShouldOfferPostInstallActions
 
 Filename: "{code:GetGameExePath}"; \
+    Parameters: "{code:GetGameLaunchArgs}"; \
     WorkingDir: "{code:GetGameDirectory}"; \
     Flags: nowait; \
     Check: ShouldRunGameInSilent
 
-Filename: "{#WikiUrl}"; \
+Filename: "{code:GetWikiUrl}"; \
     Description: "{cm:VisitWiki}"; \
     Flags: shellexec nowait postinstall skipifsilent unchecked; \
     Check: ShouldOfferPostInstallActions
@@ -228,11 +339,26 @@ var
   LegalAcceptCheck: TNewCheckBox;
   WelcomeGitHubLink: TNewStaticText;
   WelcomeWikiLink: TNewStaticText;
+#ifdef BCL_OFFLINE
+  WelcomeCodebergLink: TNewStaticText;
+#endif
+#ifndef BCL_OFFLINE
+  SourceLabel: TNewStaticText;
+  SourceCombo: TNewComboBox;
+  DataSource: String;
+  ExplicitSource: Boolean;
+#endif
+  PluginsPage: TWizardPage;
+  PluginsList: TNewCheckListBox;
+#ifndef BCL_OFFLINE
+  PluginRepoButton: TNewButton;
+#endif
+  PluginNames, PluginVersions, PluginRepos, PluginDownloads, PluginArchives: TStringList;
+  PluginsLoaded: Boolean;
   ProgressPage: TOutputProgressWizardPage;
 
   LegalDocumentLoaded: Boolean;
 
-  BepInExArchive: String;
   ModArchive: String;
   ModStageDir: String;
   ModBackupArchive: String;
@@ -327,6 +453,16 @@ begin
 end;
 
 
+function GetGameLaunchArgs(Param: String): String;
+begin
+#ifdef BCL_OFFLINE
+  Result := '';
+#else
+  Result := '';
+  if ExplicitSource then Result := '-repositorySource:' + DataSource;
+#endif
+end;
+
 function GetGameDirectory(Param: String): String;
 begin
   Result := GameDir;
@@ -339,13 +475,76 @@ begin
 end;
 
 
+function GetWikiUrl(Param: String): String;
+begin
+  if SameText(ActiveLanguage, 'zh') then
+    Result := 'https://codeberg.org/LxgacyTeam/BigCityLegacy/src/branch/main/docs/README_ZH.md'
+  else Result := 'https://github.com/LxgacyTeam/BigCityLegacy/wiki';
+end;
+
+#ifndef BCL_OFFLINE
+function GetSelectedSource(Param: String): String;
+begin
+  Result := DataSource;
+end;
+
+function GetRepositoryUrl: String;
+begin
+  if SameText(DataSource, 'Codeberg') then
+    Result := 'https://codeberg.org/LxgacyTeam/BigCityLegacy'
+  else Result := '{#GitHubWebUrl}';
+end;
+
+function GetReleaseApiUrl: String;
+begin
+  if SameText(DataSource, 'Codeberg') then Result := '{#CodebergApiUrl}'
+  else Result := '{#GitHubApiUrl}';
+end;
+
+procedure SourceChanged(Sender: TObject);
+begin
+  DataSource := SourceCombo.Items[SourceCombo.ItemIndex];
+  ExplicitSource := True;
+  PluginsLoaded := False;
+  LegalDocumentLoaded := False;
+  if LegalAcceptCheck <> nil then LegalAcceptCheck.Checked := False;
+  WelcomeGitHubLink.Caption := DataSource;
+end;
+
+function SelectReleaseAsset(const JsonPath, AssetName: String): String;
+var
+  Output: TExecOutput;
+  ExitCode, I: Integer;
+begin
+  Result := '';
+  ExtractTemporaryFile('SelectReleaseAsset.ps1');
+  if not ExecAndCaptureOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    Q(ExpandConstant('{tmp}\SelectReleaseAsset.ps1')) + ' -ReleaseFile ' + Q(JsonPath) +
+    ' -AssetName ' + Q(AssetName), ExpandConstant('{tmp}'), SW_HIDE,
+    ewWaitUntilTerminated, ExitCode, Output) then Exit;
+  if Output.Error or (ExitCode <> 0) then
+  begin
+    for I := 0 to GetArrayLength(Output.StdErr) - 1 do Log(Output.StdErr[I]);
+    Exit;
+  end;
+  for I := 0 to GetArrayLength(Output.StdOut) - 1 do
+    if Trim(Output.StdOut[I]) <> '' then Result := Trim(Output.StdOut[I]);
+end;
+
+#endif
+
 procedure OpenGitHub(Sender: TObject);
 var
   ErrorCode: Integer;
 begin
   ShellExec(
     '',
-    '{#GitHubWebUrl}',
+#ifdef BCL_OFFLINE
+    'https://github.com/LxgacyTeam/BigCityLegacy',
+#else
+    GetRepositoryUrl,
+#endif
     '',
     '',
     SW_SHOWNORMAL,
@@ -355,13 +554,23 @@ begin
 end;
 
 
+#ifdef BCL_OFFLINE
+procedure OpenCodeberg(Sender: TObject);
+var
+  ErrorCode: Integer;
+begin
+  ShellExec('', 'https://codeberg.org/LxgacyTeam/BigCityLegacy', '', '',
+    SW_SHOWNORMAL, ewNoWait, ErrorCode);
+end;
+#endif
+
 procedure OpenWiki(Sender: TObject);
 var
   ErrorCode: Integer;
 begin
   ShellExec(
     '',
-    '{#WikiUrl}',
+    GetWikiUrl(''),
     '',
     '',
     SW_SHOWNORMAL,
@@ -401,20 +610,26 @@ begin
 end;
 
 
+#ifndef BCL_OFFLINE
 function GetTermsRtfUrl: String;
+var
+  Name: String;
 begin
-  if SameText(ActiveLanguage, 'ru') then
-    Result := '{#TermsRtfUrlRu}'
-  else
-    Result := '{#TermsRtfUrlEn}';
+  if SameText(ActiveLanguage, 'ru') then Name := 'NOTICE_RU.rtf' else if SameText(ActiveLanguage, 'zh') then Name := 'NOTICE_ZH.rtf' else Name := 'NOTICE.rtf';
+  if SameText(DataSource, 'Codeberg') then
+    Result := GetRepositoryUrl + '/raw/branch/main/docs/' + Name
+  else Result := 'https://raw.githubusercontent.com/LxgacyTeam/BigCityLegacy/main/docs/' + Name;
 end;
 
+#endif
 
 function EnsureLegalDocumentLoaded: Boolean;
 var
   RtfPath: String;
   RtfData: AnsiString;
+#ifndef BCL_OFFLINE
   RtfUrl: String;
+#endif
 begin
   { EULA is ignored for unattended installs and when /SKIPEULA is passed.
     In those cases, do not download the RTF or require acceptance. }
@@ -431,18 +646,37 @@ begin
 
   RtfPath := ExpandConstant('{tmp}\BigCityLegacy-terms-' + ActiveLanguage + '.rtf');
   DeleteFile(RtfPath);
+#ifndef BCL_OFFLINE
   RtfUrl := GetTermsRtfUrl;
+#endif
 
   try
+#ifdef BCL_OFFLINE
+    LegalViewer.Text := CustomMessage('LegalOffline');
+#else
     LegalViewer.Text := CustomMessage('LegalDownload');
     Log('Downloading legal RTF for language ' + ActiveLanguage + ': ' + RtfUrl);
+#endif
 
-    DownloadTemporaryFile(
-      RtfUrl,
-      'BigCityLegacy-terms-' + ActiveLanguage + '.rtf',
-      '',
-      nil
-    );
+#ifdef BCL_OFFLINE
+    if SameText(ActiveLanguage, 'ru') then
+    begin
+      ExtractTemporaryFile('NOTICE_RU.rtf');
+      RtfPath := ExpandConstant('{tmp}\NOTICE_RU.rtf');
+    end
+    else if SameText(ActiveLanguage, 'zh') then
+    begin
+      ExtractTemporaryFile('NOTICE_ZH.rtf');
+      RtfPath := ExpandConstant('{tmp}\NOTICE_ZH.rtf');
+    end
+    else
+    begin
+      ExtractTemporaryFile('NOTICE.rtf');
+      RtfPath := ExpandConstant('{tmp}\NOTICE.rtf');
+    end;
+#else
+    DownloadTemporaryFile(RtfUrl, 'BigCityLegacy-terms-' + ActiveLanguage + '.rtf', '', nil);
+#endif
 
     if not FileExists(RtfPath) then
       RaiseException('Legal RTF file was not downloaded.');
@@ -716,6 +950,9 @@ end;
 function DownloadBepInEx: Boolean;
 var
   ArchivePath: String;
+#ifndef BCL_OFFLINE
+  DownloadUrl: String;
+#endif
 begin
   Result := False;
 
@@ -725,17 +962,23 @@ begin
   DeleteFile(ArchivePath);
 
   ProgressPage.SetText(
+#ifdef BCL_OFFLINE
+    CustomMessage('BepInExOffline'),
+#else
     CustomMessage('BepInExDownload'),
+#endif
     'BepInEx 5 x64'
   );
 
   try
-    DownloadTemporaryFile(
-      '{#BepInExUrl}',
-      'BepInEx.zip',
-      '',
-      nil
-    );
+#ifdef BCL_OFFLINE
+    ExtractTemporaryFile('BepInEx.zip');
+#else
+    DownloadUrl := '{#BepInExUrl}';
+    if SameText(DataSource, 'Codeberg') then
+      DownloadUrl := '{#CodebergBepInExUrl}';
+    DownloadTemporaryFile(DownloadUrl, 'BepInEx.zip', '', nil);
+#endif
 
     if not FileExists(ArchivePath) then
       RaiseException('BepInEx archive was not downloaded.');
@@ -914,140 +1157,36 @@ end;
 // GITHUB
 // ============================================================================
 
-function ExtractFirstZipBrowserDownloadUrl(
-  const Json: String): String;
-var
-  Marker: String;
-  SearchPos: Integer;
-  RelPos: Integer;
-  P: Integer;
-  StartPos: Integer;
-  EndPos: Integer;
-  Url: String;
-begin
-  Result := '';
-  Marker := '"browser_download_url"';
-  SearchPos := 1;
-
-  while SearchPos <= Length(Json) do
-  begin
-    RelPos := Pos(Marker, Copy(Json, SearchPos, MaxInt));
-    if RelPos = 0 then
-      Exit;
-
-    P := SearchPos + RelPos - 1 + Length(Marker);
-
-    while (P <= Length(Json)) and (Json[P] <> ':') do
-      Inc(P);
-
-    if P > Length(Json) then
-      Exit;
-
-    Inc(P);
-
-    while (P <= Length(Json)) and (Json[P] <> '"') do
-      Inc(P);
-
-    if P > Length(Json) then
-      Exit;
-
-    StartPos := P + 1;
-    EndPos := StartPos;
-
-    while EndPos <= Length(Json) do
-    begin
-      if (Json[EndPos] = '"') and
-         ((EndPos = StartPos) or (Json[EndPos - 1] <> '\')) then
-        Break;
-
-      Inc(EndPos);
-    end;
-
-    if EndPos > Length(Json) then
-      Exit;
-
-    Url := Copy(Json, StartPos, EndPos - StartPos);
-
-    if Pos('.zip', LowerCase(Url)) > 0 then
-    begin
-      Result := Url;
-      Exit;
-    end;
-
-    SearchPos := EndPos + 1;
-  end;
-end;
-
-
 function DownloadLatestMod: Boolean;
+#ifndef BCL_OFFLINE
 var
-  ApiFile: String;
-  Json: String;
-  ModUrl: String;
+  ApiFile, ModUrl: String;
+#endif
 begin
   Result := False;
-
-  ApiFile :=
-    ExpandConstant('{tmp}\github-release.json');
-
-  DeleteFile(ApiFile);
-
-  ProgressPage.SetText(
-    CustomMessage('ModDownload'),
-    'GitHub'
-  );
-
+#ifdef BCL_OFFLINE
+  ProgressPage.SetText(CustomMessage('ModOffline'), '');
+#else
+  ProgressPage.SetText(CustomMessage('ModDownload'), DataSource);
+#endif
+  ModArchive := ExpandConstant('{tmp}\BigCityLegacy-latest.zip');
+  DeleteFile(ModArchive);
   try
-
-    DownloadTemporaryFile(
-      '{#GitHubApiUrl}',
-      'github-release.json',
-      '',
-      nil
-    );
-
-    if not FileExists(ApiFile) then
-      RaiseException('GitHub API response was not downloaded.');
-
-    Json :=
-      ReadTextFile(ApiFile);
-
-    if Json = '' then
-      RaiseException('GitHub API returned an empty response.');
-
-    ModUrl :=
-      ExtractFirstZipBrowserDownloadUrl(Json);
-
-    if ModUrl = '' then
-      RaiseException(
-        'No ZIP browser_download_url was found.'
-      );
-
-    Log('Latest mod URL: ' + ModUrl);
-
-    ModArchive :=
-      ExpandConstant('{tmp}\BigCityLegacy-latest.zip');
-
-    DeleteFile(ModArchive);
-
-    DownloadTemporaryFile(
-      ModUrl,
-      'BigCityLegacy-latest.zip',
-      '',
-      nil
-    );
-
-    if not FileExists(ModArchive) then
-      RaiseException('Mod archive was not downloaded.');
-
-    Result :=
-      TestArchive(ModArchive);
-
+#ifdef BCL_OFFLINE
+    ExtractTemporaryFile('BigCityLegacy-latest.zip');
+#else
+    ApiFile := ExpandConstant('{tmp}\repository-release.json');
+    DeleteFile(ApiFile);
+    DownloadTemporaryFile(GetReleaseApiUrl, 'repository-release.json', '', nil);
+    ModUrl := SelectReleaseAsset(ApiFile, '');
+    if ModUrl = '' then RaiseException('No unambiguous BigCityLegacy binary ZIP release asset found.');
+    DownloadTemporaryFile(ModUrl, 'BigCityLegacy-latest.zip', '', nil);
+#endif
+    Result := TestArchive(ModArchive);
   except
     Log('DownloadLatestMod failed: ' + GetExceptionMessage);
   end;
 end;
-
 
 // ============================================================================
 // MOD VALIDATION
@@ -1309,6 +1448,12 @@ begin
       SourceConfigDir,
       DestConfigDir
     );
+  { Legacy collections are migrated by the plugin first; do not mask custom events. }
+  if Result and not FileExists(RelativePath('{#ModConfigDir}\Events.json')) and
+    not FileExists(RelativePath('BigCityLegacy\Events.json')) and
+    not FileExists(RelativePath('MadOutLegacy\Events.json')) then
+    Result := CopyConfigDirectory(AddBackslash(ModStageDir) + 'BigCityLegacy\events',
+      RelativePath('BigCityLegacy\events'));
 end;
 
 
@@ -1407,6 +1552,174 @@ begin
 end;
 
 
+procedure AddPlugin(const Name, Version, RepoUrl, DownloadUrl, Archive: String);
+var
+  Caption: String;
+begin
+  PluginNames.Add(Name);
+  PluginVersions.Add(Version);
+  PluginRepos.Add(RepoUrl);
+  PluginDownloads.Add(DownloadUrl);
+  PluginArchives.Add(Archive);
+  Caption := Name;
+  if Version <> '' then Caption := Caption + ' ' + Version;
+  PluginsList.AddCheckBox(Caption, '', 0, False, True, False, False, nil);
+end;
+
+#ifndef BCL_OFFLINE
+procedure PluginSelectionChanged(Sender: TObject);
+begin
+  PluginRepoButton.Enabled := PluginsList.ItemIndex >= 0;
+end;
+
+procedure OpenPluginRepository(Sender: TObject);
+var
+  ErrorCode, Index: Integer;
+begin
+  Index := PluginsList.ItemIndex;
+  if (Index >= 0) and (Index < PluginRepos.Count) then
+    ShellExec('', PluginRepos[Index], '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+end;
+#endif
+
+procedure EnsurePluginsLoaded;
+#ifndef BCL_OFFLINE
+var
+  Url, Manifest, OutputFile: String;
+  Lines: TArrayOfString;
+  Output: TExecOutput;
+  ExitCode, I: Integer;
+#endif
+begin
+  if PluginsLoaded then Exit;
+  PluginsList.Items.Clear;
+  PluginNames.Clear;
+  PluginVersions.Clear;
+  PluginRepos.Clear;
+  PluginDownloads.Clear;
+  PluginArchives.Clear;
+#ifndef BCL_OFFLINE
+  PluginRepoButton.Enabled := False;
+#endif
+  try
+#ifdef BCL_OFFLINE
+  #define OfflineIndex 0
+  #sub ListOfflinePlugin
+    #define OfflineName FindGetFileName(OfflineHandle)
+    #if Pos("'", OfflineName) > 0
+      #error Offline plugin filenames must not contain apostrophes.
+    #endif
+    #emit "    AddPlugin('" + RemoveFileExt(OfflineName) + "', '', '', '', 'BCL-plugin-" + Str(OfflineIndex) + ".zip');"
+    #expr OfflineIndex++
+  #endsub
+  #for {OfflineHandle = OfflineFound = FindFirst(SourcePath + "offline_plugins\\*.zip", 0); OfflineFound; OfflineFound = FindNext(OfflineHandle)} ListOfflinePlugin
+  #if OfflineHandle
+    #call FindClose(OfflineHandle)
+  #endif
+#else
+    if SameText(DataSource, 'Codeberg') then Url := GetRepositoryUrl + '/raw/branch/main/remote_config/PluginsList.json'
+    else Url := 'https://raw.githubusercontent.com/LxgacyTeam/BigCityLegacy/main/remote_config/PluginsList.json';
+    Manifest := ExpandConstant('{tmp}\BCL-PluginsList.json');
+    OutputFile := ExpandConstant('{tmp}\BCL-PluginsList.txt');
+    DeleteFile(Manifest);
+    DeleteFile(OutputFile);
+    DownloadTemporaryFile(Url, 'BCL-PluginsList.json', '', nil);
+    ExtractTemporaryFile('ReadPluginsList.ps1');
+    if not ExecAndCaptureOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + Q(ExpandConstant('{tmp}\ReadPluginsList.ps1')) +
+      ' -Manifest ' + Q(Manifest) + ' -Source ' + Q(DataSource) + ' -OutputFile ' + Q(OutputFile),
+      ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output) then RaiseException('Cannot read plugin catalog.');
+    if Output.Error or (ExitCode <> 0) then
+    begin
+      for I := 0 to GetArrayLength(Output.StdErr) - 1 do Log(Output.StdErr[I]);
+      RaiseException('Invalid plugin catalog.');
+    end;
+    if not LoadStringsFromFile(OutputFile, Lines) then RaiseException('Cannot read parsed plugin catalog.');
+    if (GetArrayLength(Lines) mod 4) <> 0 then RaiseException('Incomplete plugin catalog.');
+    I := 0;
+    while I < GetArrayLength(Lines) do
+    begin
+      AddPlugin(Lines[I], Lines[I + 1], Lines[I + 2], Lines[I + 3], 'BCL-plugin-' + IntToStr(I div 4) + '.zip');
+      I := I + 4;
+    end;
+#endif
+    PluginsLoaded := True;
+  except
+    PluginsLoaded := True;
+    Log('Plugin catalog failed: ' + GetExceptionMessage);
+    PluginsList.Items.Clear;
+    PluginNames.Clear;
+    PluginVersions.Clear;
+    PluginRepos.Clear;
+    PluginDownloads.Clear;
+    PluginArchives.Clear;
+  end;
+end;
+
+function ProcessPlugin(const ArchivePath: String; ValidateOnly: Boolean): Boolean;
+var
+  Params: String;
+  Output: TExecOutput;
+  ExitCode, I: Integer;
+begin
+  ExtractTemporaryFile('InstallPlugin.ps1');
+  Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    Q(ExpandConstant('{tmp}\InstallPlugin.ps1')) + ' -Archive ' + Q(ArchivePath) + ' -GameDirectory ' + Q(GameDir);
+  if ValidateOnly then Params := Params + ' -ValidateOnly';
+  Result := ExecAndCaptureOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params,
+    ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output);
+  if Result then Result := not Output.Error and (ExitCode = 0);
+  if not Result then
+    for I := 0 to GetArrayLength(Output.StdErr) - 1 do Log(Output.StdErr[I]);
+end;
+
+function PrepareSelectedPlugins: Boolean;
+var
+  I: Integer;
+  ArchivePath: String;
+begin
+  Result := False;
+  try
+    for I := 0 to PluginNames.Count - 1 do
+      if PluginsList.Checked[I] then
+      begin
+        ProgressPage.SetText(CustomMessage('PluginPrepare'), PluginNames[I]);
+        ArchivePath := ExpandConstant('{tmp}\') + PluginArchives[I];
+        DeleteFile(ArchivePath);
+#ifdef BCL_OFFLINE
+        ExtractTemporaryFile(PluginArchives[I]);
+#else
+        DownloadTemporaryFile(PluginDownloads[I], PluginArchives[I], '', nil);
+#endif
+        if not TestArchive(ArchivePath) or not ProcessPlugin(ArchivePath, True) then
+          RaiseException('Invalid plugin archive: ' + PluginNames[I]);
+      end;
+    Result := True;
+  except
+    Log('PrepareSelectedPlugins failed: ' + GetExceptionMessage);
+  end;
+end;
+
+function InstallSelectedPlugins: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  try
+    for I := 0 to PluginNames.Count - 1 do
+      if PluginsList.Checked[I] then
+      begin
+        ProgressPage.SetText(CustomMessage('PluginInstall'), PluginNames[I]);
+        if not ProcessPlugin(ExpandConstant('{tmp}\') + PluginArchives[I], False) then
+          RaiseException('Cannot install plugin: ' + PluginNames[I]);
+      end;
+    Result := True;
+  except
+    Log('InstallSelectedPlugins failed: ' + GetExceptionMessage);
+  end;
+end;
+
+
 // ============================================================================
 // MAIN INSTALLATION
 // ============================================================================
@@ -1498,6 +1811,12 @@ begin
         MB_OK
       );
 
+      Exit;
+    end;
+
+    if not PrepareSelectedPlugins then
+    begin
+      SuppressibleMsgBox(CustomMessage('PluginError'), mbError, MB_OK, 0);
       Exit;
     end;
 
@@ -1595,6 +1914,11 @@ begin
       Exit;
     end;
 
+    if not InstallSelectedPlugins then
+    begin
+      SuppressibleMsgBox(CustomMessage('PluginError'), mbError, MB_OK, 0);
+      Exit;
+    end;
     InstallationSucceeded := True;
 
     Result := True;
@@ -1722,18 +2046,43 @@ begin
   { Classic-style first page: the standard Welcome page keeps the large
     wizard image on the left. The branding placeholders are in [Setup]. }
 
+#ifndef BCL_OFFLINE
+  if not ExplicitSource then
+  begin
+    if SameText(ActiveLanguage, 'zh') then DataSource := 'Codeberg' else DataSource := 'GitHub';
+  end;
+#endif
   WelcomeGitHubLink := TNewStaticText.Create(WizardForm);
   WelcomeGitHubLink.Parent := WizardForm.WelcomePage;
-  WelcomeGitHubLink.Caption := CustomMessage('GitHubLink');
+#ifdef BCL_OFFLINE
+  WelcomeGitHubLink.Caption := 'GitHub';
+#else
+  WelcomeGitHubLink.Caption := DataSource;
+#endif
   WelcomeGitHubLink.AutoSize := True;
   WelcomeGitHubLink.Font.Style := [fsUnderline];
   WelcomeGitHubLink.Cursor := crHand;
   WelcomeGitHubLink.Left := WizardForm.WelcomeLabel2.Left;
-  WelcomeGitHubLink.Top :=
-    WizardForm.WelcomeLabel2.Top +
-    WizardForm.WelcomeLabel2.Height +
-    ScaleY(20);
+#ifdef BCL_OFFLINE
+  WelcomeGitHubLink.Top := WizardForm.WelcomePage.ClientHeight - ScaleY(80);
+#else
+  WelcomeGitHubLink.Top := WizardForm.WelcomePage.ClientHeight - ScaleY(112);
+#endif
+  WelcomeGitHubLink.Anchors := [akLeft, akBottom];
   WelcomeGitHubLink.OnClick := @OpenGitHub;
+
+#ifdef BCL_OFFLINE
+  WelcomeCodebergLink := TNewStaticText.Create(WizardForm);
+  WelcomeCodebergLink.Parent := WizardForm.WelcomePage;
+  WelcomeCodebergLink.Caption := 'Codeberg';
+  WelcomeCodebergLink.AutoSize := True;
+  WelcomeCodebergLink.Font.Style := [fsUnderline];
+  WelcomeCodebergLink.Cursor := crHand;
+  WelcomeCodebergLink.Left := WelcomeGitHubLink.Left;
+  WelcomeCodebergLink.Top := WelcomeGitHubLink.Top + ScaleY(24);
+  WelcomeCodebergLink.Anchors := [akLeft, akBottom];
+  WelcomeCodebergLink.OnClick := @OpenCodeberg;
+#endif
 
   WelcomeWikiLink := TNewStaticText.Create(WizardForm);
   WelcomeWikiLink.Parent := WizardForm.WelcomePage;
@@ -1742,8 +2091,36 @@ begin
   WelcomeWikiLink.Font.Style := [fsUnderline];
   WelcomeWikiLink.Cursor := crHand;
   WelcomeWikiLink.Left := WelcomeGitHubLink.Left;
+#ifdef BCL_OFFLINE
+  WelcomeWikiLink.Top := WelcomeCodebergLink.Top + ScaleY(24);
+#else
   WelcomeWikiLink.Top := WelcomeGitHubLink.Top + ScaleY(24);
+#endif
+  WelcomeWikiLink.Anchors := [akLeft, akBottom];
   WelcomeWikiLink.OnClick := @OpenWiki;
+
+#ifndef BCL_OFFLINE
+  SourceLabel := TNewStaticText.Create(WizardForm);
+  SourceLabel.Parent := WizardForm.WelcomePage;
+  SourceLabel.Left := WizardForm.WelcomeLabel2.Left;
+  SourceLabel.Top := WelcomeWikiLink.Top + ScaleY(24);
+  SourceLabel.Caption := CustomMessage('DataSource');
+  SourceLabel.AutoSize := True;
+  SourceLabel.Anchors := [akLeft, akBottom];
+  SourceCombo := TNewComboBox.Create(WizardForm);
+  SourceCombo.Parent := WizardForm.WelcomePage;
+  SourceCombo.Left := SourceLabel.Left;
+  SourceCombo.Top := SourceLabel.Top + ScaleY(22);
+  SourceCombo.Width := ScaleX(210);
+  SourceCombo.Anchors := [akLeft, akBottom];
+  SourceCombo.Style := csDropDownList;
+  SourceCombo.Items.Add('GitHub');
+  SourceCombo.Items.Add('Codeberg');
+  if SameText(DataSource, 'Codeberg') then SourceCombo.ItemIndex := 1 else SourceCombo.ItemIndex := 0;
+  SourceCombo.OnChange := @SourceChanged;
+#endif
+
+  WizardForm.WelcomeLabel2.Height := WelcomeGitHubLink.Top - WizardForm.WelcomeLabel2.Top - ScaleY(12);
 
   LegalPage :=
     CreateCustomPage(
@@ -1797,11 +2174,36 @@ begin
     GameDirPage.Values[0] := GameDir
   else
     GameDirPage.Values[0] := '';
+  PluginNames := TStringList.Create;
+  PluginVersions := TStringList.Create;
+  PluginRepos := TStringList.Create;
+  PluginDownloads := TStringList.Create;
+  PluginArchives := TStringList.Create;
+  PluginsPage := CreateCustomPage(GameDirPage.ID, CustomMessage('PluginsTitle'), CustomMessage('PluginsDescription'));
+  PluginsList := TNewCheckListBox.Create(PluginsPage);
+  PluginsList.Parent := PluginsPage.Surface;
+#ifdef BCL_OFFLINE
+  PluginsList.SetBounds(0, 0, PluginsPage.SurfaceWidth, PluginsPage.SurfaceHeight);
+#else
+  PluginsList.SetBounds(0, 0, PluginsPage.SurfaceWidth, PluginsPage.SurfaceHeight - ScaleY(40));
+#endif
+  PluginsList.Anchors := [akLeft, akTop, akRight, akBottom];
+#ifndef BCL_OFFLINE
+  PluginRepoButton := TNewButton.Create(PluginsPage);
+  PluginRepoButton.Parent := PluginsPage.Surface;
+  PluginRepoButton.SetBounds(PluginsPage.SurfaceWidth - ScaleX(180), PluginsPage.SurfaceHeight - ScaleY(30), ScaleX(180), ScaleY(20));
+  PluginRepoButton.Anchors := [akRight, akBottom];
+  PluginRepoButton.Caption := CustomMessage('PluginsRepository');
+  PluginRepoButton.OnClick := @OpenPluginRepository;
+  PluginRepoButton.Enabled := False;
+  PluginsList.OnClick := @PluginSelectionChanged;
+#endif
 end;
 
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  if CurPageID = PluginsPage.ID then EnsurePluginsLoaded;
   if ShouldSkipEula then
     Exit;
 
@@ -1820,11 +2222,18 @@ end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  { /SILENT and /VERYSILENT always skip EULA. /SKIPEULA does the same
-    for interactive installations. }
   Result := ShouldSkipEula and (PageID = LegalPage.ID);
+  if PageID = PluginsPage.ID then
+  begin
+    if WizardSilent then Result := True
+    else
+    begin
+      { Inspect the catalog before navigation so an empty page is never shown. }
+      EnsurePluginsLoaded;
+      Result := PluginNames.Count = 0;
+    end;
+  end;
 end;
-
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
@@ -1880,26 +2289,28 @@ end;
 
 function InitializeSetup: Boolean;
 begin
-  InstallationSucceeded := False;
-  SelfDeleteRequested :=
-    IsDisposableMode;
-
-  if GetGameDirFromCommandLine <> '' then
+#ifndef BCL_OFFLINE
+  DataSource := ExpandConstant('{param:SOURCE|GitHub}');
+  ExplicitSource := ExpandConstant('{param:SOURCE|}') <> '';
+  if SameText(DataSource, 'GitHub') then DataSource := 'GitHub'
+  else if SameText(DataSource, 'Codeberg') then DataSource := 'Codeberg'
+  else
   begin
-    GameDir :=
-      RemoveBackslashUnlessRoot(
-        GetGameDirFromCommandLine
-      );
-
-    Result :=
-      ValidateGameDirectory;
-
+    MsgBox('Invalid /SOURCE. Use GitHub or Codeberg.', mbError, MB_OK);
+    Result := False;
     Exit;
   end;
-
+#endif
+  InstallationSucceeded := False;
+  SelfDeleteRequested := IsDisposableMode;
+  if GetGameDirFromCommandLine <> '' then
+  begin
+    GameDir := RemoveBackslashUnlessRoot(GetGameDirFromCommandLine);
+    Result := ValidateGameDirectory;
+    Exit;
+  end;
   Result := True;
 end;
-
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
