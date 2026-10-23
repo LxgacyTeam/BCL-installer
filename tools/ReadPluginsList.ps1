@@ -1,7 +1,9 @@
 param([Parameter(Mandatory=$true)][string]$Manifest,
       [Parameter(Mandatory=$true)][ValidateSet('GitHub','Codeberg')][string]$Source,
-      [Parameter(Mandatory=$true)][string]$OutputFile)
+      [Parameter(Mandatory=$true)][string]$OutputFile,
+      [string]$GameDirectory)
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\PluginKeyFiles.ps1"
 try {
     $data = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($data.version -ne 1 -or $data.plugins -isnot [Array]) { throw 'Unsupported plugin catalog format.' }
@@ -26,7 +28,16 @@ try {
                 throw 'Plugin URL must use HTTPS on the selected repository host.'
             }
         }
+        $keys = @(ConvertTo-PluginKeyFiles $plugin.keyFiles)
+        $installed = $false
+        if ($GameDirectory) {
+            foreach ($key in $keys) {
+                # A partial installation also needs repair/update.
+                if ([IO.File]::Exists((Get-PluginKeyTarget $GameDirectory $key))) { $installed = $true; break }
+            }
+        }
         $lines.Add($plugin.name); $lines.Add($plugin.version); $lines.Add($repo); $lines.Add($download)
+        $lines.Add(($keys -join '|')); $lines.Add(([int]$installed).ToString())
     }
     [IO.File]::WriteAllLines($OutputFile,$lines,(New-Object Text.UTF8Encoding($true)))
 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }

@@ -1,7 +1,9 @@
 param([Parameter(Mandatory=$true)][string]$Archive,
       [Parameter(Mandatory=$true)][string]$GameDirectory,
-      [switch]$ValidateOnly)
+      [switch]$ValidateOnly,
+      [string]$KeyFiles = '')
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\PluginKeyFiles.ps1"
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = $null
@@ -11,6 +13,9 @@ $written = New-Object 'System.Collections.Generic.List[string]'
 $existing = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
 try {
     $root = [IO.Path]::GetFullPath($GameDirectory).TrimEnd('\','/') + '\'
+    $requestedKeys = @()
+    if ($KeyFiles) { $requestedKeys = $KeyFiles.Split('|') }
+    $keys = @(ConvertTo-PluginKeyFiles $requestedKeys)
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     $entries = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in $zip.Entries) {
@@ -28,6 +33,10 @@ try {
         $entries.Add($path,$entry)
     }
     if (!$entries.Count) { throw 'Plugin archive is empty.' }
+    foreach ($key in $keys) {
+        $target = Get-PluginKeyTarget $GameDirectory $key
+        if (!$entries.ContainsKey($target)) { throw "Plugin archive is missing a key file: $key" }
+    }
     if ($ValidateOnly) { exit 0 }
     $backup = Join-Path ([IO.Path]::GetTempPath()) ('BCL-plugin-backup-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($backup) | Out-Null
@@ -42,6 +51,9 @@ try {
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
         $written.Add($path)
         [IO.Compression.ZipFileExtensions]::ExtractToFile($pair.Value,$path,$true)
+    }
+    foreach ($key in $keys) {
+        if (![IO.File]::Exists((Get-PluginKeyTarget $GameDirectory $key))) { throw "Installed plugin key file is missing: $key" }
     }
 } catch {
     foreach ($path in $written) {

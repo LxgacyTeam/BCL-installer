@@ -100,6 +100,7 @@ Source: "tools\SelectReleaseAsset.ps1"; Flags: dontcopy noencryption
 Source: "tools\ReadPluginsList.ps1"; Flags: dontcopy noencryption
 #endif
 Source: "tools\InstallPlugin.ps1"; Flags: dontcopy noencryption
+Source: "tools\PluginKeyFiles.ps1"; Flags: dontcopy noencryption
 #ifdef BCL_OFFLINE
 Source: "payload\BepInEx.zip"; Flags: dontcopy noencryption
 Source: "payload\BigCityLegacy.zip"; DestName: "BigCityLegacy-latest.zip"; Flags: dontcopy noencryption
@@ -353,7 +354,7 @@ var
 #ifndef BCL_OFFLINE
   PluginRepoButton: TNewButton;
 #endif
-  PluginNames, PluginVersions, PluginRepos, PluginDownloads, PluginArchives: TStringList;
+  PluginNames, PluginVersions, PluginRepos, PluginDownloads, PluginArchives, PluginKeyFiles: TStringList;
   PluginsLoaded: Boolean;
   ProgressPage: TOutputProgressWizardPage;
 
@@ -1512,6 +1513,16 @@ begin
   if not MergeModConfigs then
     Exit;
 
+  { Seed the Windows launcher without replacing a user's customized script.
+    Linux launchers are intentionally not copied by the Windows installer. }
+  if FileExists(AddBackslash(ModStageDir) + 'runServer.cmd') and
+    not FileExists(RelativePath('runServer.cmd')) then
+    if not CopyFile(AddBackslash(ModStageDir) + 'runServer.cmd', RelativePath('runServer.cmd'), True) then
+    begin
+      Log('Could not install runServer.cmd.');
+      Exit;
+    end;
+
   Result :=
     ValidateMod;
 end;
@@ -1552,7 +1563,7 @@ begin
 end;
 
 
-procedure AddPlugin(const Name, Version, RepoUrl, DownloadUrl, Archive: String);
+procedure AddPlugin(const Name, Version, RepoUrl, DownloadUrl, Archive, KeyFiles: String; Installed: Boolean);
 var
   Caption: String;
 begin
@@ -1561,9 +1572,13 @@ begin
   PluginRepos.Add(RepoUrl);
   PluginDownloads.Add(DownloadUrl);
   PluginArchives.Add(Archive);
+  PluginKeyFiles.Add(KeyFiles);
   Caption := Name;
   if Version <> '' then Caption := Caption + ' ' + Version;
-  PluginsList.AddCheckBox(Caption, '', 0, False, True, False, False, nil);
+  PluginsList.AddCheckBox(Caption, '', 0,
+    WizardSilent and Installed and not HasCommandLineSwitch('NOEXTRAUPDATE'), True, False, False, nil);
+  if WizardSilent and Installed and not HasCommandLineSwitch('NOEXTRAUPDATE') then
+    Log('Selected installed plugin for automatic update: ' + Name);
 end;
 
 #ifndef BCL_OFFLINE
@@ -1598,6 +1613,7 @@ begin
   PluginRepos.Clear;
   PluginDownloads.Clear;
   PluginArchives.Clear;
+  PluginKeyFiles.Clear;
 #ifndef BCL_OFFLINE
   PluginRepoButton.Enabled := False;
 #endif
@@ -1609,7 +1625,7 @@ begin
     #if Pos("'", OfflineName) > 0
       #error Offline plugin filenames must not contain apostrophes.
     #endif
-    #emit "    AddPlugin('" + RemoveFileExt(OfflineName) + "', '', '', '', 'BCL-plugin-" + Str(OfflineIndex) + ".zip');"
+    #emit "    AddPlugin('" + RemoveFileExt(OfflineName) + "', '', '', '', 'BCL-plugin-" + Str(OfflineIndex) + ".zip', '', False);"
     #expr OfflineIndex++
   #endsub
   #for {OfflineHandle = OfflineFound = FindFirst(SourcePath + "offline_plugins\\*.zip", 0); OfflineFound; OfflineFound = FindNext(OfflineHandle)} ListOfflinePlugin
@@ -1625,9 +1641,10 @@ begin
     DeleteFile(OutputFile);
     DownloadTemporaryFile(Url, 'BCL-PluginsList.json', '', nil);
     ExtractTemporaryFile('ReadPluginsList.ps1');
+    ExtractTemporaryFile('PluginKeyFiles.ps1');
     if not ExecAndCaptureOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + Q(ExpandConstant('{tmp}\ReadPluginsList.ps1')) +
-      ' -Manifest ' + Q(Manifest) + ' -Source ' + Q(DataSource) + ' -OutputFile ' + Q(OutputFile),
+      ' -Manifest ' + Q(Manifest) + ' -Source ' + Q(DataSource) + ' -OutputFile ' + Q(OutputFile) + ' -GameDirectory ' + Q(GameDir),
       ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output) then RaiseException('Cannot read plugin catalog.');
     if Output.Error or (ExitCode <> 0) then
     begin
@@ -1635,12 +1652,12 @@ begin
       RaiseException('Invalid plugin catalog.');
     end;
     if not LoadStringsFromFile(OutputFile, Lines) then RaiseException('Cannot read parsed plugin catalog.');
-    if (GetArrayLength(Lines) mod 4) <> 0 then RaiseException('Incomplete plugin catalog.');
+    if (GetArrayLength(Lines) mod 6) <> 0 then RaiseException('Incomplete plugin catalog.');
     I := 0;
     while I < GetArrayLength(Lines) do
     begin
-      AddPlugin(Lines[I], Lines[I + 1], Lines[I + 2], Lines[I + 3], 'BCL-plugin-' + IntToStr(I div 4) + '.zip');
-      I := I + 4;
+      AddPlugin(Lines[I], Lines[I + 1], Lines[I + 2], Lines[I + 3], 'BCL-plugin-' + IntToStr(I div 6) + '.zip', Lines[I + 4], Lines[I + 5] = '1');
+      I := I + 6;
     end;
 #endif
     PluginsLoaded := True;
@@ -1653,19 +1670,31 @@ begin
     PluginRepos.Clear;
     PluginDownloads.Clear;
     PluginArchives.Clear;
+    PluginKeyFiles.Clear;
   end;
 end;
 
-function ProcessPlugin(const ArchivePath: String; ValidateOnly: Boolean): Boolean;
+procedure LoadPluginsForInstallation;
+begin
+#ifndef BCL_OFFLINE
+  { Older BCL releases already invoke /SILENT without a plugin-update switch. }
+  if WizardSilent and not HasCommandLineSwitch('NOEXTRAUPDATE') then
+    EnsurePluginsLoaded;
+#endif
+end;
+
+function ProcessPlugin(const ArchivePath, KeyFiles: String; ValidateOnly: Boolean): Boolean;
 var
   Params: String;
   Output: TExecOutput;
   ExitCode, I: Integer;
 begin
   ExtractTemporaryFile('InstallPlugin.ps1');
+  ExtractTemporaryFile('PluginKeyFiles.ps1');
   Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     Q(ExpandConstant('{tmp}\InstallPlugin.ps1')) + ' -Archive ' + Q(ArchivePath) + ' -GameDirectory ' + Q(GameDir);
   if ValidateOnly then Params := Params + ' -ValidateOnly';
+  if KeyFiles <> '' then Params := Params + ' -KeyFiles ' + Q(KeyFiles);
   Result := ExecAndCaptureOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params,
     ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output);
   if Result then Result := not Output.Error and (ExitCode = 0);
@@ -1691,7 +1720,7 @@ begin
 #else
         DownloadTemporaryFile(PluginDownloads[I], PluginArchives[I], '', nil);
 #endif
-        if not TestArchive(ArchivePath) or not ProcessPlugin(ArchivePath, True) then
+        if not TestArchive(ArchivePath) or not ProcessPlugin(ArchivePath, PluginKeyFiles[I], True) then
           RaiseException('Invalid plugin archive: ' + PluginNames[I]);
       end;
     Result := True;
@@ -1710,7 +1739,7 @@ begin
       if PluginsList.Checked[I] then
       begin
         ProgressPage.SetText(CustomMessage('PluginInstall'), PluginNames[I]);
-        if not ProcessPlugin(ExpandConstant('{tmp}\') + PluginArchives[I], False) then
+        if not ProcessPlugin(ExpandConstant('{tmp}\') + PluginArchives[I], PluginKeyFiles[I], False) then
           RaiseException('Cannot install plugin: ' + PluginNames[I]);
       end;
     Result := True;
@@ -1814,6 +1843,7 @@ begin
       Exit;
     end;
 
+    LoadPluginsForInstallation;
     if not PrepareSelectedPlugins then
     begin
       SuppressibleMsgBox(CustomMessage('PluginError'), mbError, MB_OK, 0);
@@ -2179,6 +2209,7 @@ begin
   PluginRepos := TStringList.Create;
   PluginDownloads := TStringList.Create;
   PluginArchives := TStringList.Create;
+  PluginKeyFiles := TStringList.Create;
   PluginsPage := CreateCustomPage(GameDirPage.ID, CustomMessage('PluginsTitle'), CustomMessage('PluginsDescription'));
   PluginsList := TNewCheckListBox.Create(PluginsPage);
   PluginsList.Parent := PluginsPage.Surface;
@@ -2203,7 +2234,7 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  if CurPageID = PluginsPage.ID then EnsurePluginsLoaded;
+  if (CurPageID = PluginsPage.ID) and not WizardSilent then EnsurePluginsLoaded;
   if ShouldSkipEula then
     Exit;
 
