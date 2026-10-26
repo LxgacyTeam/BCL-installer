@@ -3,13 +3,18 @@
     [string] $InitialDirectory = "",
 
     [Parameter(Position = 1)]
-    [string] $Title = "Select folder"
+    [string] $Title = "Select folder",
+    [string] $OutputFile = "",
+    [string] $OkButtonText = "Select folder",
+    [string] $AllFilesText = "All files",
+    [string] $GameFileName = "game.exe"
 )
 
 $ErrorActionPreference = "Stop"
 
 $source = @'
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 
 public static class NativeFolderPicker
@@ -20,6 +25,10 @@ public static class NativeFolderPicker
         FOS_PICKFOLDERS      = 0x00000020,
         FOS_FORCEFILESYSTEM  = 0x00000040,
         FOS_PATHMUSTEXIST    = 0x00000800,
+        FOS_FILEMUSTEXIST    = 0x00001000,
+        FOS_CREATEPROMPT     = 0x00002000,
+        FOS_ALLOWMULTISELECT = 0x00000200,
+        FOS_DONTADDTORECENT  = 0x02000000,
         FOS_NOCHANGEDIR      = 0x00000008
     }
 
@@ -122,7 +131,7 @@ public static class NativeFolderPicker
         ref Guid riid,
         [MarshalAs(UnmanagedType.Interface)] out IShellItem ppv);
 
-    public static string Pick(string initialDirectory, string title)
+    public static string Pick(string initialDirectory, string title, string okButtonText, string allFilesText, string gameFileName)
     {
         IFileDialog dialog = null;
         IShellItem initialItem = null;
@@ -136,11 +145,15 @@ public static class NativeFolderPicker
             FOS options;
             dialog.GetOptions(out options);
             dialog.SetOptions(
-                options |
-                FOS.FOS_PICKFOLDERS |
+                (options & ~(FOS.FOS_PICKFOLDERS | FOS.FOS_FILEMUSTEXIST | FOS.FOS_CREATEPROMPT | FOS.FOS_ALLOWMULTISELECT)) |
                 FOS.FOS_FORCEFILESYSTEM |
                 FOS.FOS_PATHMUSTEXIST |
+                FOS.FOS_DONTADDTORECENT |
                 FOS.FOS_NOCHANGEDIR);
+            // Folder-only mode hides files. Use the normal filesystem view and
+            // resolve the selected file (or the prefilled name) to its directory.
+            dialog.SetFileTypes(1, new[] { new COMDLG_FILTERSPEC { pszName = allFilesText, pszSpec = "*" } });
+            dialog.SetOkButtonLabel(okButtonText);
 
             if (!String.IsNullOrWhiteSpace(title))
                 dialog.SetTitle(title);
@@ -165,6 +178,8 @@ public static class NativeFolderPicker
                 }
             }
 
+            dialog.SetFileName(gameFileName);
+
             int hr = dialog.Show(IntPtr.Zero);
 
             // HRESULT_FROM_WIN32(ERROR_CANCELLED) = 0x800704C7
@@ -182,7 +197,8 @@ public static class NativeFolderPicker
             if (pathPtr == IntPtr.Zero)
                 return null;
 
-            return Marshal.PtrToStringUni(pathPtr);
+            string selected = Marshal.PtrToStringUni(pathPtr);
+            return Directory.Exists(selected) ? Path.GetFullPath(selected) : Path.GetDirectoryName(selected);
         }
         finally
         {
@@ -204,13 +220,17 @@ public static class NativeFolderPicker
 
 try {
     Add-Type -TypeDefinition $source -Language CSharp
-    $selected = [NativeFolderPicker]::Pick($InitialDirectory, $Title)
+    $selected = [NativeFolderPicker]::Pick($InitialDirectory, $Title, $OkButtonText, $AllFilesText, $GameFileName)
 
     if ([String]::IsNullOrWhiteSpace($selected)) {
         exit 1
     }
 
-    [Console]::Out.WriteLine($selected)
+    if ($OutputFile) {
+        [IO.File]::WriteAllText($OutputFile, $selected, (New-Object Text.UTF8Encoding($true)))
+    } else {
+        [Console]::Out.WriteLine($selected)
+    }
     exit 0
 }
 catch {

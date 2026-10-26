@@ -32,13 +32,5 @@ Silent update example:
 BigCityLegacy_Installer.exe /GAME="C:\Games\MadOut2" /SILENT /SKIPEULA /RUNGAME /DISPOSABLE /SOURCE=Codeberg 
 ```
 
-
 Online installation supports GitHub and Codeberg, including the BepInEx file mirror. The offline build embeds BepInEx, the mod and legal notices. See [BUILDING.md](BUILDING.md) for payload layout and release publishing.
 
-## Sources, languages and plugins
-
-The online installer supports GitHub and Codeberg, with English, Russian and Simplified Chinese UI. Chinese defaults to Codeberg. Optional plugins are selected on a separate page using `remote_config/PluginsList.json`; the Repository button opens the highlighted plugin. Silent online updates automatically reinstall the catalog versions of installed additional plugins detected by `keyFiles`, including partial installations. No additional argument is needed by older BCL updaters. Use `/noExtraUpdate` to update the core mod only.
-
-The Windows launcher `runServer.cmd` is copied from the BCL archive to the game root if absent. An existing launcher is preserved. `runServer.sh` is not installed.
-
-The offline installer uses embedded payloads only. Place optional plugin ZIPs in `offline_plugins/` before compiling; it offers those archives without source controls. GitHub, Codeberg and Wiki links are available on the welcome page. Empty or unavailable plugin lists are skipped. Wiki links follow the interface language (English/Russian: GitHub; Chinese: Codeberg). [Build and payload documentation](BUILDING.md).

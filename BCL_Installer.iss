@@ -6,6 +6,11 @@
 ; ============================================================================
 
 #define MyAppName "BigCityLegacy"
+; UTC Unix timestamp is captured once by the compiler, never at installer startup.
+#define BuildTimestamp ExecAndGetFirstLine(AddBackslash(SysPath) + "WindowsPowerShell\v1.0\powershell.exe", "-NoLogo -NoProfile -NonInteractive -Command " + AddQuotes("[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"))
+#if Len(BuildTimestamp) < 10
+  #error Failed to determine the installer build timestamp.
+#endif
 
 #define GameExe "game.exe"
 #define SupportedGameVersion "9.4"
@@ -56,6 +61,7 @@ OutputBaseFilename=BigCityLegacy_Installer
 #endif
 Compression=zip
 SolidCompression=yes
+ArchiveExtraction=full
 
 WizardStyle=modern dynamic windows11
 DisableWelcomePage=no
@@ -132,6 +138,23 @@ Name: "ru"; \
 Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [CustomMessages]
+
+en.BuildVersion=Version:
+ru.BuildVersion=Версия:
+zh.BuildVersion=版本：
+en.PluginDownload=Downloading plugin...
+ru.PluginDownload=Скачивание плагина...
+zh.PluginDownload=正在下载插件...
+en.PluginValidate=Validating plugin archive...
+ru.PluginValidate=Проверка архива плагина...
+zh.PluginValidate=正在验证插件压缩包...
+
+en.SelectFolderButton=Select folder
+ru.SelectFolderButton=Выбрать папку
+zh.SelectFolderButton=选择文件夹
+en.AllFilesFilter=All files
+ru.AllFilesFilter=Все файлы
+zh.AllFilesFilter=所有文件
 
 en.GameDirectory=Game directory:
 en.SelectGameDirectory=Select the root directory of the game.
@@ -338,6 +361,7 @@ var
   LegalPage: TWizardPage;
   LegalViewer: TRichEditViewer;
   LegalAcceptCheck: TNewCheckBox;
+  WelcomeBuildVersion: TLabel;
   WelcomeGitHubLink: TNewStaticText;
   WelcomeWikiLink: TNewStaticText;
 #ifdef BCL_OFFLINE
@@ -357,6 +381,8 @@ var
   PluginNames, PluginVersions, PluginRepos, PluginDownloads, PluginArchives, PluginKeyFiles: TStringList;
   PluginsLoaded: Boolean;
   ProgressPage: TOutputProgressWizardPage;
+  PluginOutputError: Boolean;
+  ModStageReady: Boolean;
 
   LegalDocumentLoaded: Boolean;
 
@@ -948,6 +974,61 @@ begin
 end;
 
 
+procedure StartPackageProgress;
+begin
+  ProgressPage.ProgressBar.Style := npbstNormal;
+  ProgressPage.SetProgress(0, 1000);
+end;
+
+procedure StartPackageExtraction;
+begin
+  ProgressPage.ProgressBar.Style := npbstNormal;
+#ifdef BCL_OFFLINE
+  ProgressPage.SetProgress(0, 1000);
+#else
+  ProgressPage.SetProgress(500, 1000);
+#endif
+end;
+
+#ifndef BCL_OFFLINE
+function PackageDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+var
+  DoneBytes, TotalBytes: Double;
+begin
+  if ProgressMax > 0 then
+  begin
+    ProgressPage.ProgressBar.Style := npbstNormal;
+    DoneBytes := Progress;
+    TotalBytes := ProgressMax;
+    ProgressPage.SetProgress(Round((DoneBytes / TotalBytes) * 500), 1000);
+  end
+  else
+  begin
+    ProgressPage.SetProgress(0, 1000);
+    ProgressPage.ProgressBar.Style := npbstMarquee;
+  end;
+  Result := not Terminated;
+end;
+#endif
+
+function PackageExtractionProgress(const ArchiveName, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+var
+  DoneBytes, TotalBytes: Double;
+begin
+  if ProgressMax > 0 then
+  begin
+    ProgressPage.ProgressBar.Style := npbstNormal;
+    DoneBytes := Progress;
+    TotalBytes := ProgressMax;
+#ifdef BCL_OFFLINE
+    ProgressPage.SetProgress(Round((DoneBytes / TotalBytes) * 1000), 1000);
+#else
+    ProgressPage.SetProgress(500 + Round((DoneBytes / TotalBytes) * 500), 1000);
+#endif
+  end;
+  Result := not Terminated;
+end;
+
 function DownloadBepInEx: Boolean;
 var
   ArchivePath: String;
@@ -956,6 +1037,7 @@ var
 #endif
 begin
   Result := False;
+  StartPackageProgress;
 
   ArchivePath :=
     ExpandConstant('{tmp}\BepInEx.zip');
@@ -978,7 +1060,7 @@ begin
     DownloadUrl := '{#BepInExUrl}';
     if SameText(DataSource, 'Codeberg') then
       DownloadUrl := '{#CodebergBepInExUrl}';
-    DownloadTemporaryFile(DownloadUrl, 'BepInEx.zip', '', nil);
+    DownloadTemporaryFile(DownloadUrl, 'BepInEx.zip', '', @PackageDownloadProgress);
 #endif
 
     if not FileExists(ArchivePath) then
@@ -1019,33 +1101,20 @@ end;
 
 function ExtractBepInEx: Boolean;
 var
-  ExitCode: Integer;
   ArchivePath: String;
 begin
   Result := False;
-
-  ArchivePath :=
-    ExpandConstant('{tmp}\BepInEx.zip');
-
-  ProgressPage.SetText(
-    CustomMessage('BepInExInstall'),
-    GameDir
-  );
-
-  if not TestArchive(ArchivePath) then
-    Exit;
-
-  if not Run7Zip(
-    'x ' +
-    Q(ArchivePath) +
-    ' -o' + Q(GameDir) +
-    ' -y',
-    ExitCode
-  ) then
-    Exit;
-
-  Result :=
-    ExitCode = 0;
+  ArchivePath := ExpandConstant('{tmp}\BepInEx.zip');
+  ProgressPage.SetText(CustomMessage('BepInExInstall'), GameDir);
+  StartPackageExtraction;
+  if not TestArchive(ArchivePath) then Exit;
+  try
+    ExtractArchive(ArchivePath, GameDir, '', True, @PackageExtractionProgress);
+    ProgressPage.SetProgress(1000, 1000);
+    Result := True;
+  except
+    Log('BepInEx extraction failed: ' + GetExceptionMessage);
+  end;
 end;
 
 
@@ -1165,6 +1234,8 @@ var
 #endif
 begin
   Result := False;
+  ModStageReady := False;
+  StartPackageProgress;
 #ifdef BCL_OFFLINE
   ProgressPage.SetText(CustomMessage('ModOffline'), '');
 #else
@@ -1181,7 +1252,7 @@ begin
     DownloadTemporaryFile(GetReleaseApiUrl, 'repository-release.json', '', nil);
     ModUrl := SelectReleaseAsset(ApiFile, '');
     if ModUrl = '' then RaiseException('No unambiguous BigCityLegacy binary ZIP release asset found.');
-    DownloadTemporaryFile(ModUrl, 'BigCityLegacy-latest.zip', '', nil);
+    DownloadTemporaryFile(ModUrl, 'BigCityLegacy-latest.zip', '', @PackageDownloadProgress);
 #endif
     Result := TestArchive(ModArchive);
   except
@@ -1303,42 +1374,29 @@ end;
 // ============================================================================
 
 function ExtractModToStage: Boolean;
-var
-  ExitCode: Integer;
 begin
   Result := False;
-
-  ModStageDir :=
-    ExpandConstant('{tmp}\BigCityLegacy-ModStage');
-
-  DelTree(
-    ModStageDir,
-    True,
-    True,
-    True
-  );
-
+  ModStageReady := False;
+  ModStageDir := ExpandConstant('{tmp}\BigCityLegacy-ModStage');
+  DelTree(ModStageDir, True, True, True);
   ForceDirectories(ModStageDir);
+  ProgressPage.SetText(CustomMessage('ModInstall'), 'Preparing files');
+  StartPackageExtraction;
+  try
+    ExtractArchive(ModArchive, ModStageDir, '', True, @PackageExtractionProgress);
+    ModStageReady := True;
+    ProgressPage.SetProgress(1000, 1000);
+    Result := True;
+  except
+    Log('BCL extraction failed: ' + GetExceptionMessage);
+  end;
+end;
 
-  ProgressPage.SetText(
-    CustomMessage('ModInstall'),
-    'Preparing files'
-  );
-
-  if not RunCommand(
-    ExpandConstant('{tmp}\7za.exe'),
-    'x ' +
-    Q(ModArchive) +
-    ' -o' + Q(ModStageDir) +
-    ' -y',
-    ModStageDir,
-    ewWaitUntilTerminated,
-    ExitCode
-  ) then
-    Exit;
-
-  Result :=
-    ExitCode = 0;
+function PrepareLatestMod: Boolean;
+begin
+  Result := False;
+  if not DownloadLatestMod then Exit;
+  Result := ExtractModToStage;
 end;
 
 
@@ -1469,8 +1527,8 @@ var
 begin
   Result := False;
 
-  if not ExtractModToStage then
-    Exit;
+  if not ModStageReady then
+    if not ExtractModToStage then Exit;
 
   StagePluginDir :=
     AddBackslash(ModStageDir) +
@@ -1563,9 +1621,44 @@ begin
 end;
 
 
-procedure AddPlugin(const Name, Version, RepoUrl, DownloadUrl, Archive, KeyFiles: String; Installed: Boolean);
+function FormatPluginSize(const BytesText: String): String;
+var
+  Bytes: Int64;
+  Value: Double;
+  UnitIndex: Integer;
+  Units: String;
+begin
+  Result := '';
+  if BytesText = '' then Exit;
+  Bytes := StrToInt64(BytesText);
+  if Bytes < 0 then Exit;
+  if Bytes < 1024 then
+  begin
+    Result := BytesText + ' B';
+    Exit;
+  end;
+  Value := Bytes;
+  UnitIndex := 0;
+  while (Value >= 1024) and (UnitIndex < 6) do
+  begin
+    Value := Value / 1024;
+    UnitIndex := UnitIndex + 1;
+  end;
+  case UnitIndex of
+    1: Units := 'KiB';
+    2: Units := 'MiB';
+    3: Units := 'GiB';
+    4: Units := 'TiB';
+    5: Units := 'PiB';
+    6: Units := 'EiB';
+  end;
+  Result := Format('%.2f %s', [Value, Units]);
+end;
+
+procedure AddPlugin(const Name, Version, RepoUrl, DownloadUrl, Archive, KeyFiles, SizeBytes: String; Installed, DefaultChecked: Boolean);
 var
   Caption: String;
+  Checked: Boolean;
 begin
   PluginNames.Add(Name);
   PluginVersions.Add(Version);
@@ -1575,8 +1668,12 @@ begin
   PluginKeyFiles.Add(KeyFiles);
   Caption := Name;
   if Version <> '' then Caption := Caption + ' ' + Version;
-  PluginsList.AddCheckBox(Caption, '', 0,
-    WizardSilent and Installed and not HasCommandLineSwitch('NOEXTRAUPDATE'), True, False, False, nil);
+  if WizardSilent then
+    Checked := Installed and not HasCommandLineSwitch('NOEXTRAUPDATE')
+  else
+    Checked := DefaultChecked;
+  PluginsList.AddCheckBox(Caption, FormatPluginSize(SizeBytes), 0,
+    Checked, True, False, False, nil);
   if WizardSilent and Installed and not HasCommandLineSwitch('NOEXTRAUPDATE') then
     Log('Selected installed plugin for automatic update: ' + Name);
 end;
@@ -1600,7 +1697,7 @@ end;
 procedure EnsurePluginsLoaded;
 #ifndef BCL_OFFLINE
 var
-  Url, Manifest, OutputFile: String;
+  Url, Manifest, OutputFile, CatalogError: String;
   Lines: TArrayOfString;
   Output: TExecOutput;
   ExitCode, I: Integer;
@@ -1625,7 +1722,7 @@ begin
     #if Pos("'", OfflineName) > 0
       #error Offline plugin filenames must not contain apostrophes.
     #endif
-    #emit "    AddPlugin('" + RemoveFileExt(OfflineName) + "', '', '', '', 'BCL-plugin-" + Str(OfflineIndex) + ".zip', '', False);"
+    #emit "    AddPlugin('" + RemoveFileExt(OfflineName) + "', '', '', '', 'BCL-plugin-" + Str(OfflineIndex) + ".zip', '', '', False, False);"
     #expr OfflineIndex++
   #endsub
   #for {OfflineHandle = OfflineFound = FindFirst(SourcePath + "offline_plugins\\*.zip", 0); OfflineFound; OfflineFound = FindNext(OfflineHandle)} ListOfflinePlugin
@@ -1648,16 +1745,22 @@ begin
       ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output) then RaiseException('Cannot read plugin catalog.');
     if Output.Error or (ExitCode <> 0) then
     begin
-      for I := 0 to GetArrayLength(Output.StdErr) - 1 do Log(Output.StdErr[I]);
-      RaiseException('Invalid plugin catalog.');
+      CatalogError := '';
+      for I := 0 to GetArrayLength(Output.StdErr) - 1 do
+      begin
+        Log(Output.StdErr[I]);
+        if (CatalogError = '') and (Trim(Output.StdErr[I]) <> '') then
+          CatalogError := Trim(Output.StdErr[I]);
+      end;
+      RaiseException('Invalid plugin catalog. ' + CatalogError);
     end;
     if not LoadStringsFromFile(OutputFile, Lines) then RaiseException('Cannot read parsed plugin catalog.');
-    if (GetArrayLength(Lines) mod 6) <> 0 then RaiseException('Incomplete plugin catalog.');
+    if (GetArrayLength(Lines) mod 8) <> 0 then RaiseException('Incomplete plugin catalog.');
     I := 0;
     while I < GetArrayLength(Lines) do
     begin
-      AddPlugin(Lines[I], Lines[I + 1], Lines[I + 2], Lines[I + 3], 'BCL-plugin-' + IntToStr(I div 6) + '.zip', Lines[I + 4], Lines[I + 5] = '1');
-      I := I + 6;
+      AddPlugin(Lines[I], Lines[I + 1], Lines[I + 2], Lines[I + 3], 'BCL-plugin-' + IntToStr(I div 8) + '.zip', Lines[I + 4], Lines[I + 5], Lines[I + 7] = '1', Lines[I + 6] = '1');
+      I := I + 8;
     end;
 #endif
     PluginsLoaded := True;
@@ -1683,23 +1786,58 @@ begin
 #endif
 end;
 
+#ifndef BCL_OFFLINE
+function PluginDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+var
+  DoneBytes, TotalBytes: Double;
+begin
+  if ProgressMax > 0 then
+  begin
+    ProgressPage.ProgressBar.Style := npbstNormal;
+    DoneBytes := Progress;
+    TotalBytes := ProgressMax;
+    ProgressPage.SetProgress(Round((DoneBytes / TotalBytes) * 1000), 1000);
+  end
+  else
+  begin
+    ProgressPage.SetProgress(0, 1000);
+    ProgressPage.ProgressBar.Style := npbstMarquee;
+  end;
+  Result := True;
+end;
+#endif
+
+procedure PluginInstallProgress(const S: String; const Error, FirstLine: Boolean);
+var
+  Value: Integer;
+begin
+  if Error then PluginOutputError := True;
+  if not Error and (Pos('BCLPLUGINPROGRESS:', S) = 1) then
+  begin
+    Value := StrToIntDef(Copy(S, 19, Length(S)), -1);
+    if (Value >= 0) and (Value <= 1000) then ProgressPage.SetProgress(Value, 1000);
+  end
+  else
+    Log('Plugin: ' + S);
+end;
+
 function ProcessPlugin(const ArchivePath, KeyFiles: String; ValidateOnly: Boolean): Boolean;
 var
   Params: String;
-  Output: TExecOutput;
-  ExitCode, I: Integer;
+  ExitCode: Integer;
 begin
   ExtractTemporaryFile('InstallPlugin.ps1');
   ExtractTemporaryFile('PluginKeyFiles.ps1');
   Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     Q(ExpandConstant('{tmp}\InstallPlugin.ps1')) + ' -Archive ' + Q(ArchivePath) + ' -GameDirectory ' + Q(GameDir);
-  if ValidateOnly then Params := Params + ' -ValidateOnly';
+  if ValidateOnly then Params := Params + ' -ValidateOnly'
+  else Params := Params + ' -ReportProgress';
   if KeyFiles <> '' then Params := Params + ' -KeyFiles ' + Q(KeyFiles);
-  Result := ExecAndCaptureOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params,
-    ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, Output);
-  if Result then Result := not Output.Error and (ExitCode = 0);
-  if not Result then
-    for I := 0 to GetArrayLength(Output.StdErr) - 1 do Log(Output.StdErr[I]);
+  PluginOutputError := False;
+  Result := ExecAndLogOutput(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params,
+    ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode, @PluginInstallProgress);
+  if Result then Result := not PluginOutputError and (ExitCode = 0);
+  if Result and not ValidateOnly then ProgressPage.SetProgress(1000, 1000);
 end;
 
 function PrepareSelectedPlugins: Boolean;
@@ -1713,13 +1851,19 @@ begin
       if PluginsList.Checked[I] then
       begin
         ProgressPage.SetText(CustomMessage('PluginPrepare'), PluginNames[I]);
+        ProgressPage.ProgressBar.Style := npbstNormal;
+        ProgressPage.SetProgress(0, 1000);
         ArchivePath := ExpandConstant('{tmp}\') + PluginArchives[I];
         DeleteFile(ArchivePath);
 #ifdef BCL_OFFLINE
         ExtractTemporaryFile(PluginArchives[I]);
 #else
-        DownloadTemporaryFile(PluginDownloads[I], PluginArchives[I], '', nil);
+        ProgressPage.SetText(CustomMessage('PluginDownload'), PluginNames[I]);
+        DownloadTemporaryFile(PluginDownloads[I], PluginArchives[I], '', @PluginDownloadProgress);
 #endif
+        ProgressPage.SetText(CustomMessage('PluginValidate'), PluginNames[I]);
+        ProgressPage.SetProgress(0, 1000);
+        ProgressPage.ProgressBar.Style := npbstMarquee;
         if not TestArchive(ArchivePath) or not ProcessPlugin(ArchivePath, PluginKeyFiles[I], True) then
           RaiseException('Invalid plugin archive: ' + PluginNames[I]);
       end;
@@ -1727,6 +1871,8 @@ begin
   except
     Log('PrepareSelectedPlugins failed: ' + GetExceptionMessage);
   end;
+  ProgressPage.ProgressBar.Style := npbstNormal;
+  ProgressPage.SetProgress(0, 1000);
 end;
 
 function InstallSelectedPlugins: Boolean;
@@ -1739,6 +1885,8 @@ begin
       if PluginsList.Checked[I] then
       begin
         ProgressPage.SetText(CustomMessage('PluginInstall'), PluginNames[I]);
+        ProgressPage.ProgressBar.Style := npbstNormal;
+        ProgressPage.SetProgress(0, 1000);
         if not ProcessPlugin(ExpandConstant('{tmp}\') + PluginArchives[I], PluginKeyFiles[I], False) then
           RaiseException('Cannot install plugin: ' + PluginNames[I]);
       end;
@@ -1832,7 +1980,7 @@ begin
       end;
     end;
 
-    if not DownloadLatestMod then
+    if not PrepareLatestMod then
     begin
       MsgBox(
         CustomMessage('GitHubError'),
@@ -1974,6 +2122,8 @@ var
   Output: TExecOutput;
   I: Integer;
   Line: String;
+  ResultPath: String;
+  Selected: TArrayOfString;
 begin
   Result := False;
 
@@ -1996,11 +2146,18 @@ begin
       Exit;
     end;
 
+    ResultPath := ExpandConstant('{tmp}\BCL-SelectedFolder.txt');
+    DeleteFile(ResultPath);
     Params :=
       '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
-      Q(ScriptPath) + ' ' +
-      Q(Directory) + ' ' +
-      Q(CustomMessage('SelectGameDirectory'));
+      Q(ScriptPath);
+    if Directory <> '' then Params := Params + ' -InitialDirectory ' + Q(Directory);
+    Params := Params +
+      ' -Title ' + Q(CustomMessage('SelectGameDirectory')) +
+      ' -OutputFile ' + Q(ResultPath) +
+      ' -OkButtonText ' + Q(CustomMessage('SelectFolderButton')) +
+      ' -AllFilesText ' + Q(CustomMessage('AllFilesFilter')) +
+      ' -GameFileName ' + Q('{#GameExe}');
 
     Log('Starting out-of-process native folder picker.');
 
@@ -2038,16 +2195,13 @@ begin
       Exit;
     end;
 
-    { The helper writes exactly one selected filesystem path to stdout.
-      Use the last non-empty line defensively. }
-    for I := 0 to GetArrayLength(Output.StdOut) - 1 do
-    begin
-      Line := Trim(Output.StdOut[I]);
-      if Line <> '' then
-        Directory := Line;
-    end;
-
-    Result := Directory <> '';
+    { UTF-8 BOM avoids the PowerShell/OEM stdout code-page conversion. }
+    if not LoadStringsFromFile(ResultPath, Selected) then Exit;
+    if GetArrayLength(Selected) <> 1 then Exit;
+    Line := Selected[0];
+    if not DirExists(Line) then Exit;
+    Directory := Line;
+    Result := True;
   except
     Log('Native folder picker failed: ' + GetExceptionMessage);
   end;
@@ -2072,6 +2226,17 @@ end;
 procedure InitializeWizard;
 begin
   LegalDocumentLoaded := False;
+
+  WelcomeBuildVersion := TLabel.Create(WizardForm);
+  WelcomeBuildVersion.Parent := WizardForm.WelcomePage;
+  WelcomeBuildVersion.Caption := CustomMessage('BuildVersion') + ' {#BuildTimestamp}';
+  WelcomeBuildVersion.AutoSize := True;
+  WelcomeBuildVersion.Transparent := True;
+  WelcomeBuildVersion.Font.Size := 8;
+  WelcomeBuildVersion.Font.Color := clWhite;
+  WelcomeBuildVersion.Left := ScaleX(8);
+  WelcomeBuildVersion.Top := WizardForm.WelcomePage.ClientHeight - WelcomeBuildVersion.Height - ScaleY(8);
+  WelcomeBuildVersion.Anchors := [akLeft, akBottom];
 
   { Classic-style first page: the standard Welcome page keeps the large
     wizard image on the left. The branding placeholders are in [Setup]. }

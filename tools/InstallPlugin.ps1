@@ -1,7 +1,8 @@
 param([Parameter(Mandatory=$true)][string]$Archive,
       [Parameter(Mandatory=$true)][string]$GameDirectory,
       [switch]$ValidateOnly,
-      [string]$KeyFiles = '')
+      [string]$KeyFiles = '',
+      [switch]$ReportProgress)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\PluginKeyFiles.ps1"
 Add-Type -AssemblyName System.IO.Compression
@@ -11,6 +12,21 @@ $backup = $null
 $keepBackup = $false
 $written = New-Object 'System.Collections.Generic.List[string]'
 $existing = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::OrdinalIgnoreCase)
+# A private, ASCII-only line protocol consumed by the setup progress callback.
+$progressClock = [Diagnostics.Stopwatch]::StartNew()
+$lastProgress = -1
+function Write-PluginProgress([long]$done, [long]$total, [switch]$Complete) {
+    if (!$ReportProgress -or $ValidateOnly) { return }
+    $value = 0
+    if ($Complete) { $value = 1000 }
+    elseif ($total -gt 0) { $value = [int][Math]::Min(999,[Math]::Floor(1000.0 * $done / $total)) }
+    if ($value -ne $script:lastProgress -and ($script:lastProgress -lt 0 -or $Complete -or $script:progressClock.ElapsedMilliseconds -ge 100)) {
+        [Console]::Out.WriteLine('BCLPLUGINPROGRESS:' + $value.ToString([Globalization.CultureInfo]::InvariantCulture))
+        [Console]::Out.Flush()
+        $script:lastProgress = $value
+        $script:progressClock.Restart()
+    }
+}
 try {
     $root = [IO.Path]::GetFullPath($GameDirectory).TrimEnd('\','/') + '\'
     $requestedKeys = @()
@@ -38,23 +54,47 @@ try {
         if (!$entries.ContainsKey($target)) { throw "Plugin archive is missing a key file: $key" }
     }
     if ($ValidateOnly) { exit 0 }
+    $totalBytes = [long]0
+    foreach ($entry in $entries.Values) { $totalBytes += $entry.Length }
+    $processedBytes = [long]0
+    $buffer = New-Object byte[] 131072
+    Write-PluginProgress 0 $totalBytes
     $backup = Join-Path ([IO.Path]::GetTempPath()) ('BCL-plugin-backup-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($backup) | Out-Null
     foreach ($pair in $entries.GetEnumerator()) {
         $path = $pair.Key
         # Preserve existing plugin configuration; replace versioned binaries/assets.
-        if ([IO.File]::Exists($path) -and ($path -match '\\BepInEx\\config\\' -or $path -match '\\BigCityLegacy\\config\\')) { continue }
+        if ([IO.File]::Exists($path) -and ($path -match '\\BepInEx\\config\\' -or $path -match '\\BigCityLegacy\\config\\')) {
+            $processedBytes += $pair.Value.Length
+            Write-PluginProgress $processedBytes $totalBytes
+            continue
+        }
         if ([IO.File]::Exists($path)) {
             $saved = Join-Path $backup ([Guid]::NewGuid().ToString('N'))
             [IO.File]::Copy($path,$saved); $existing.Add($path,$saved)
         }
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
         $written.Add($path)
-        [IO.Compression.ZipFileExtensions]::ExtractToFile($pair.Value,$path,$true)
+        $inputStream = $null
+        $outputStream = $null
+        try {
+            $inputStream = $pair.Value.Open()
+            $outputStream = [IO.File]::Open($path,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            while (($count = $inputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
+                $outputStream.Write($buffer,0,$count)
+                $processedBytes += $count
+                Write-PluginProgress $processedBytes $totalBytes
+            }
+        } finally {
+            if ($outputStream) { $outputStream.Dispose() }
+            if ($inputStream) { $inputStream.Dispose() }
+        }
+        [IO.File]::SetLastWriteTime($path,$pair.Value.LastWriteTime.DateTime)
     }
     foreach ($key in $keys) {
         if (![IO.File]::Exists((Get-PluginKeyTarget $GameDirectory $key))) { throw "Installed plugin key file is missing: $key" }
     }
+    Write-PluginProgress $processedBytes $totalBytes -Complete
 } catch {
     foreach ($path in $written) {
         try { if ($existing.ContainsKey($path)) { [IO.File]::Copy($existing[$path],$path,$true) } else { [IO.File]::Delete($path) } }
