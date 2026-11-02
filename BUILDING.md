@@ -62,6 +62,7 @@ Release ZIP layout:
 ```text
 BepInEx/plugins/BigCityLegacy/BigCityLegacy.dll
 BepInEx/plugins/BigCityLegacy/LegacyUIFramework.dll
+BepInEx/plugins/BigCityLegacy/LegacyUIFramework.Blur.dll
 BigCityLegacy/config/ServerConfig.toml
 BigCityLegacy/config/ServersList.json
 BigCityLegacy/config/RespawnPoints.json
@@ -69,11 +70,13 @@ BigCityLegacy/events/<event name>.json
 runServer.cmd
 ```
 
+The installer copies all BCL release files with their paths relative to the game root, including additional DLLs, nested assets and future modules. There is no per-file installation list. The root `runServer.sh` is skipped by the Windows installer. Configuration and event directories use the preservation rules below.
+
 Replace payload files for each mod release before compiling the offline installer. Place optional installable plugin ZIPs in `offline_plugins/` before compilation. Their filenames are displayed on the plugins page, and every archive is embedded in the EXE. The directory may be empty; in that case the plugins page is skipped. Use descriptive filenames without apostrophes, such as `EnhancedCarTuning_1.0.0.zip`. Source archives are not installable plugins.
 
 The offline executable contains no online download logic, source selector or online catalog helper. Repository and Wiki links open in the browser only when the user clicks them or selects Visit Wiki. It ignores `/SOURCE` and does not change the mod's saved provider. English, Russian and Simplified Chinese legal notices are embedded.
 
-Existing configs and event files are never overwritten. If an old `Events.json` is present, bundled events are not seeded: the mod first migrates the user's collection. DLL replacement retains the existing backup/rollback behavior. Both installer builds copy `runServer.cmd` from the BCL archive to the game root if absent; an existing customized launcher is preserved. Archives from older releases without this script remain supported. The Windows installer does not copy `runServer.sh`.
+Existing configs and event files are never overwritten. If an old `Events.json` is present, bundled events are not seeded: the mod first migrates the user's collection. The plugin directory retains the existing backup/rollback behavior. Versioned release files, including `runServer.cmd`, replace existing copies. Archives without optional modules or launchers remain supported. The same copying and configuration rules apply to both installer builds. BCL completes missing options in `ServerConfig.toml` itself when the server loads the configuration; Setup does not replace existing TOML files.
 
 Offline silent runs do not query the remote catalog or automatically select embedded plugins; the automatic plugin-update mechanism is part of the online updater.
 

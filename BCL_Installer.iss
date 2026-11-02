@@ -1520,69 +1520,66 @@ end;
 // INSTALL MOD
 // ============================================================================
 
-function InstallMod: Boolean;
+{ Copy every versioned release file, retaining the archive's game-root layout.
+  Configs and event seeding keep their existing merge rules. }
+function CopyModDirectory(const RelativeDir: String): Boolean;
 var
-  StagePluginDir: String;
-  DestinationPluginDir: String;
+  FindRec: TFindRec;
+  SourceDir, DestDir, RelativeName, SourcePath, DestPath: String;
 begin
   Result := False;
-
-  if not ModStageReady then
-    if not ExtractModToStage then Exit;
-
-  StagePluginDir :=
-    AddBackslash(ModStageDir) +
-    '{#ModPluginDir}';
-
-  DestinationPluginDir :=
-    RelativePath('{#ModPluginDir}');
-
-  if not DirExists(StagePluginDir) then
+  SourceDir := AddBackslash(ModStageDir) + RelativeDir;
+  DestDir := RelativePath(RelativeDir);
+  if not ForceDirectories(DestDir) then Exit;
+  if not FindFirst(AddBackslash(SourceDir) + '*', FindRec) then
   begin
-    Log('Staged plugin directory does not exist.');
+    Result := True;
     Exit;
   end;
+  try
+    repeat
+      if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+      begin
+        if RelativeDir = '' then RelativeName := FindRec.Name
+        else RelativeName := AddBackslash(RelativeDir) + FindRec.Name;
+        SourcePath := AddBackslash(SourceDir) + FindRec.Name;
+        DestPath := AddBackslash(DestDir) + FindRec.Name;
+        if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+        begin
+          if (CompareText(RelativeName, '{#ModConfigDir}') <> 0) and
+             (CompareText(RelativeName, 'BigCityLegacy\events') <> 0) then
+            if not CopyModDirectory(RelativeName) then Exit;
+        end
+        else if CompareText(RelativeName, 'runServer.sh') <> 0 then
+        begin
+          if not CopyFile(SourcePath, DestPath, False) then
+          begin
+            Log('Could not install release file: ' + RelativeName);
+            Exit;
+          end;
+        end;
+      end;
+    until not FindNext(FindRec);
+    Result := True;
+  finally
+    FindClose(FindRec);
+  end;
+end;
 
-  { Plugin files are versioned files, so unlike configs they are
-    intentionally replaced. }
-
-  ForceDirectories(DestinationPluginDir);
-
-  if not CopyFile(
-    AddBackslash(StagePluginDir) +
-      'BigCityLegacy.dll',
-    AddBackslash(DestinationPluginDir) +
-      'BigCityLegacy.dll',
-    False
-  ) then
+function InstallMod: Boolean;
+begin
+  Result := False;
+  if not ModStageReady then
+    if not ExtractModToStage then Exit;
+  if not FileExists(AddBackslash(ModStageDir) + '{#ModDll1}') or
+     not FileExists(AddBackslash(ModStageDir) + '{#ModDll2}') then
+  begin
+    Log('Staged archive is missing required mod files.');
     Exit;
-
-  if not CopyFile(
-    AddBackslash(StagePluginDir) +
-      'LegacyUIFramework.dll',
-    AddBackslash(DestinationPluginDir) +
-      'LegacyUIFramework.dll',
-    False
-  ) then
-    Exit;
-
-  { Configs are merged separately and never overwrite user files. }
-
-  if not MergeModConfigs then
-    Exit;
-
-  { Seed the Windows launcher without replacing a user's customized script.
-    Linux launchers are intentionally not copied by the Windows installer. }
-  if FileExists(AddBackslash(ModStageDir) + 'runServer.cmd') and
-    not FileExists(RelativePath('runServer.cmd')) then
-    if not CopyFile(AddBackslash(ModStageDir) + 'runServer.cmd', RelativePath('runServer.cmd'), True) then
-    begin
-      Log('Could not install runServer.cmd.');
-      Exit;
-    end;
-
-  Result :=
-    ValidateMod;
+  end;
+  if not CopyModDirectory('') then Exit;
+  if not MergeModConfigs then Exit;
+  Result := ValidateMod;
 end;
 
 
